@@ -1,0 +1,115 @@
+FROM ubuntu:16.04
+MAINTAINER nyuge <aiben.mail1@gmail.com>
+# This is inspired from floydhub/dl-docker and waleedka/modern-deep-learning-docker
+# A lot of appreciations !!!
+
+# environments settings
+ARG DEBIAN_FRONTEND=noninteractive
+ENV PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH" \
+    LANG=C.UTF-8 \
+    PYTHON_VERSION=3.5.3 \
+    PYTHON_PIP_VERSION=9.0.1
+
+# install packages
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        apt-utils \
+        build-essential \
+        bzip2 \
+        ca-certificates \
+        cmake \
+        curl \
+        gfortran \
+        git \
+        graphviz \
+        gzip \
+        liblapack-dev \
+        libopenblas-dev \
+        libsqlite3-dev \
+        libssl-dev \
+        make \
+        openssh-client \
+        python-dev \
+        unzip \
+        vim \
+        wget \
+        zlib1g-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# Python installations
+RUN set -ex \
+    && curl -fSL "https://www.python.org/ftp/python/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz" -o python.tar.xz \
+    && mkdir -p /usr/src/python \
+    && tar -xJC /usr/src/python --strip-components=1 -f python.tar.xz \
+    && rm python.tar.xz \
+    && cd /usr/src/python \
+    && ./configure --enable-shared --enable-unicode=ucs4 \
+    && make -j$(nproc) \
+    && make install \
+    && ldconfig \
+    && pip3 install --no-cache-dir --upgrade --ignore-installed pip==$PYTHON_PIP_VERSION \
+    && find /usr/local \( -type d -a -name test -o -name tests \) \
+        -o \( -type f -a -name '*.pyc' -o -name '*.pyo' \) \
+        -exec rm -rf '{}' + \
+    && rm -rf /usr/src/python ~/.cache
+
+# symbolic links
+RUN cd /usr/local/bin \
+    && ln -s easy_install-3.5 easy_install \
+    && ln -s idle3 idle \
+    && ln -s pydoc3 pydoc \
+    && ln -s python3 python \
+    && ln -s python3-config python-config
+
+# pip & python packages installation
+RUN mkdir -p /usr/src/app/
+WORKDIR /usr/src/app/
+COPY requirements.txt /usr/src/app/
+RUN pip3 install --no-cache-dir \
+    -r requirements.txt
+
+#
+# Jupyter Notebook
+#
+# Set up notebook config
+WORKDIR $HOME/
+COPY jupyter_notebook_config.py $HOME/.jupyter/
+
+# OpenCV
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libjpeg8-dev \
+        libtiff5-dev \
+        libjasper-dev \
+        libpng12-dev \
+        libavcodec-dev \
+        libavformat-dev \
+        libswscale-dev \
+        libgtk2.0-dev \
+        libv4l-dev \
+        liblapacke-dev \
+        checkinstall \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && git clone --depth 1 https://github.com/opencv/opencv.git /usr/local/src/opencv \
+    && mkdir -p /usr/local/src/opencv/build \
+    && cd /usr/local/src/opencv/build \
+    && cmake -D CMAKE_INSTALL_PREFIX=/usr/local \
+        -D BUILD_TESTS=OFF \
+        -D BUILD_PERF_TESTS=OFF \
+        -D PYTHON_DEFAULT_EXECUTABLE=$(which python) \
+        .. \
+    && make -j"$(nproc)" \
+    && make install
+
+# Keras
+RUN pip install --no-cache-dir --upgrade \
+    h5py \
+    keras
+
+# Workspace setting
+WORKDIR $HOME/workspace/
+EXPOSE 8080 8888
+CMD ["/bin/bash"]
